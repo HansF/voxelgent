@@ -7,9 +7,10 @@ import type { View } from '../types';
 import { clamp, coarsePointer, ease } from '../util';
 import type { World } from '../world';
 import { rideCamera } from './ride';
+import { navigationAction, type NavAction as Action } from './keys';
 import { backOff, EYE, findStreet, openSpot, walkNet } from './spots';
 
-// Three modes, one set of keys as in games (W/S forward and back, A/D turn, Q/E nose up and down, Shift faster;
+// Three modes, one AZERTY key layout (Z/S forward and back, Q/D turn, A/E nose up and down, Shift faster;
 // arrows alike) and one gesture language for mouse, trackpad and touch:
 //   orbit: drag moves the map, right-drag turns and tilts, wheel zooms at the cursor, double-click flies there
 //   walk:  drag looks, click walks there, wheel steps, Space jumps, Esc flies up
@@ -24,11 +25,6 @@ export interface Ride extends Picked {
 interface WalkOpts { at?: THREE.Vector3; exact?: boolean; facing?: THREE.Vector3; pitch?: number; ms?: number; deckOK?: boolean }
 interface Transition { from: THREE.Vector3; fromQ: THREE.Quaternion; fromFov: number; t0: number; ms: number }
 
-type Action = 'f' | 'b' | 'tl' | 'tr' | 'tu' | 'td';
-const KEYMAP: Record<string, Action> = {
-  KeyW: 'f', KeyS: 'b', KeyA: 'tl', KeyD: 'tr', KeyQ: 'tu', KeyE: 'td',
-  ArrowUp: 'f', ArrowDown: 'b', ArrowLeft: 'tl', ArrowRight: 'tr',
-};
 const STEP = 1.05, HEAD = 1.9, GRAV = 16, TILT = Math.PI * 0.48, WALK_FOV = 65;
 
 export class Nav {
@@ -95,7 +91,7 @@ export class Nav {
         if (this.mode === 'walk') { if (this.vy === 0) this.vy = 5.2; } else this.jumpAsked = true;
         e.preventDefault(); return;
       }
-      const k = KEYMAP[e.code];
+      const k = navigationAction(e.key);
       if (!k) return;
       this.keys.add(k);
       if (this.ride && this.ride.kind !== 'person') this.hopOff();
@@ -105,7 +101,7 @@ export class Nav {
     });
     addEventListener('keyup', (e) => {
       this.shift = e.shiftKey;
-      const k = KEYMAP[e.code];
+      const k = navigationAction(e.key);
       if (k) this.keys.delete(k);
       if (this.turned && ![...this.keys].some((a) => a[0] === 't')) { this.turned = false; this.retarget(); }
     });

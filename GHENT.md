@@ -14,6 +14,8 @@ pnpm dev
 
 Open http://localhost:5173/. Generated Ghent assets are included in `web/public/ghent`; no API access or DWG converter is needed to run the viewer.
 
+Navigation uses AZERTY: **Z/S** move forward/back, **Q/D** turn left/right, **A/E** tilt up/down, and **Shift** moves faster. Arrow keys also work. The on-screen hints use the same layout.
+
 ## Sources
 
 - [Stad Gent — Gent in 3D](https://data.stad.gent/explore/dataset/gent-in-3d/): four building and four terrain tiles, named 2013, in Belgian Lambert 72 (EPSG:31370). Bounds: easting 104000–106000, northing 193000–195000. Converted STL files come from [Mateo Van Damme's Fly Over Ghent](https://github.com/MateoVanDamme/fly-over-gent), hosted at `https://storage.googleapis.com/fly-over-ghent/stl/`. This project uses the data; it does not copy the other viewer's implementation.

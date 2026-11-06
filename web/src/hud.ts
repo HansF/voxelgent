@@ -1,11 +1,11 @@
 import type { Mode, Ride } from './nav/nav';
+import { NAV_KEYS, navigationKey } from './nav/keys';
 import { $, coarsePointer, el } from './util';
 
 export interface Rect { x0: number; x1: number; y0: number; y1: number }
 
 const TILT = (d: 1 | -1) => `<svg viewBox="-4 -4 8 8"><path d="M-3 ${d}l3 ${-2 * d} 3 ${2 * d}"/></svg>`;
-const KEYS = [['KeyQ', 'Q', TILT(1)], ['KeyW', 'W', ''], ['KeyE', 'E', TILT(-1)], ['KeyA', 'A', ''], ['KeyS', 'S', ''], ['KeyD', 'D', '']];
-const ALIAS: Record<string, string> = { ArrowUp: 'KeyW', ArrowDown: 'KeyS', ArrowLeft: 'KeyA', ArrowRight: 'KeyD' };
+const KEYS = NAV_KEYS.map(({ key, action }) => [key, key.toUpperCase(), action === 'tu' ? TILT(1) : action === 'td' ? TILT(-1) : '']);
 
 // an outlined mouse with the part in use filled (l/r button, w wheel), drag arrows either side
 const mouse = (part: 'l' | 'r' | 'w', drag = false) => `<svg viewBox="-13 -2 26 30">
@@ -34,8 +34,8 @@ export class Hud {
     box.innerHTML = `<div class="who"></div>${this.touch ? ''
       : `<div class="row"><div class="keys">${KEYS.map(([c, k, g]) => `<span class="cap" data-k="${c}">${k}${g && `<i>${g}</i>`}</span>`).join('')}</div><div class="mouse"></div></div>`}`;
     const lit = (k: string, on: boolean) => box.querySelectorAll(`[data-k="${k}"]`).forEach((n) => n.classList.toggle('on', on));
-    addEventListener('keydown', (e) => { if (!(e.target as Element).closest?.('input:not([type=range])')) lit(ALIAS[e.code] ?? e.code, true); });
-    addEventListener('keyup', (e) => lit(ALIAS[e.code] ?? e.code, false));
+    addEventListener('keydown', (e) => { if (!(e.target as Element).closest?.('input:not([type=range])')) lit(navigationKey(e.key) ?? e.code, true); });
+    addEventListener('keyup', (e) => lit(navigationKey(e.key) ?? e.code, false));
     addEventListener('blur', () => box.querySelectorAll('.on').forEach((n) => n.classList.remove('on')));
     dom.addEventListener('pointerdown', (e) => { if (e.pointerType === 'mouse') lit(e.button === 2 || e.shiftKey ? 'r' : 'l', true); });
     addEventListener('pointerup', () => { lit('l', false); lit('r', false); });
