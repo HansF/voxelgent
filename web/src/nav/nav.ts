@@ -405,7 +405,7 @@ export class Nav {
     else this.updateOrbit(dt);
   }
 
-  // A/D/Q/E turn in place; W/S fly along the view, faster higher up; reaching the street lands you on it
+  // Q/D/A/E turn in place; Z/S fly along the view, faster higher up; reaching the street lands you on it
   private updateOrbit(dt: number) {
     const tr = this.axis('tr', 'tl'), tp = this.axis('tu', 'td');
     if (tr || tp) { this.turnInPlace(-tr * (this.shift ? 2.4 : 1.2) * dt, tp * 0.8 * dt); this.turned = true; }
