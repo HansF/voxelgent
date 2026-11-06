@@ -1,4 +1,16 @@
-# Warszawa Śródmieście in voxels
+# Ghent in voxels
+
+**Live map:** [hansf.github.io/voxelgent](https://hansf.github.io/voxelgent/)
+
+This fork opens a 2 × 2 km voxel map of Ghent using Stad Gent's official 3D building and terrain data (via Fly Over Ghent), the municipal tree inventory and OpenStreetMap. See [GHENT.md](GHENT.md) for sources, preview instructions, rebuilding and limitations. The original Warsaw map is available with `?city=warsaw`.
+
+Bus and tram journeys animate from the public De Lijn timetable without an API key. Blue **≈** badges identify scheduled estimates; actual delays and cancellations are unknown. Live GPS is optional and requires a separate server and De Lijn key.
+
+![Ghent in voxels with scheduled transit](ghent-scheduled-preview.png)
+
+The original project's documentation follows.
+
+## Warszawa Śródmieście in voxels
 
 A 3950 × 3150 m diorama of central Warsaw at 1 m voxels, anchored on the PKiN spire and rotated 21.5° to the Palace axes (so walls and the street grid are not staircased), in the style of MagicaVoxel renders (ephtracy). It covers:
 - the Palace of Culture and Science (PKiN), Złota 44, Złote Tarasy and the newly greened Złota

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { dataUrl } from './location';
 import type { ColumnData, Meta, TileLevel } from './types';
 import type { MeshRequest, MeshReply, RawColumns } from './mesher.worker';
 import { World, type ColumnSource } from './world';
@@ -155,7 +156,7 @@ export class TileStreamer implements ColumnSource {
 
   private requestFor({ node: n, dataOnly }: Job): { msg: MeshRequest; transfer: Transferable[] } {
     const [x0, y0] = this.bounds(n.s, n.tx, n.ty);
-    const file = (k: string) => new URL(`data/tiles/${k}.bin`, location.href).href;
+    const file = (k: string) => new URL(dataUrl(`data/tiles/${k}.bin`), location.href).href;
     const base = { key: n.key, N: this.N, s: n.s, x0, y0 };
     if (n.foliage) {
       // the base tile's column data is still here: hand over a copy instead of fetching it again

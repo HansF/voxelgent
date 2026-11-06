@@ -3,3 +3,5 @@
 __pycache__/
 web/node_modules/
 web/dist/
+web/.env
+web/.env.local

@@ -10,6 +10,8 @@ import { loadWindows } from './windows';
 import { Fountains } from './fountains';
 import { Hud } from './hud';
 import { Labels } from './labels';
+import { locationConfig } from './location';
+import { TransitLayer } from './transit';
 import { always, blank, gpu, remember, startStats, track, trackLater } from './stats';
 import { Nav, type Mode, type Ride } from './nav/nav';
 import { makePost } from './post';
@@ -49,7 +51,7 @@ const controls = makeControls();
 const post = makePost(renderer, scene, camera);
 const daylight = new Daylight(renderer, scene, engine === 'zones' ? 2048 : 4096);
 const nav = new Nav(camera, controls, renderer.domElement, scene, (v) => flyTo(v), onMode);
-const bar = new Bar({ days: DAYS, weathers: ['typical', ...Object.keys(WEATHERS)], river: RIVER, onDay: (d) => { setDay(d); share(); trackLater('date', { day: d }); },
+const bar = new Bar({ days: DAYS, weathers: [...(locationConfig.measuredEffects ? ['typical'] : []), ...Object.keys(WEATHERS)], river: RIVER, onDay: (d) => { setDay(d); share(); trackLater('date', { day: d }); },
   onDayEnd: () => { if (weatherName === 'typical') setWeather('typical'); },
   onHour: (h) => { setHour(h); share(); trackLater('hour', { hour: +h.toFixed(1) }); },
   onWeather: (w) => { setWeather(w); share(); track('weather', { weather: w }); }, onRiver: (cm) => { flood?.setGauge(cm); trackLater('river', { cm }); } });
@@ -58,6 +60,7 @@ const map = new THREE.Box3();
 const tiltShift = qs.get('tilt') !== '0' && innerWidth >= 600 && (engine === 'city' || qs.get('tilt') === '1');
 let world: World | null = null, labels: Labels | null = null, hud: Hud | null = null;
 let life: StreetLife | null = null, flood: Flood | null = null, fountains: Fountains | null = null;
+let transit: TransitLayer | null = null;
 let city: Awaited<ReturnType<typeof installCity>> | null = null;
 let uniforms: ReturnType<typeof makeUniforms> | null = null, streamer: TileStreamer | null = null, views: Record<string, View> = {};
 let fly: ((now: number) => void) | null = null;
@@ -71,15 +74,21 @@ nav.cancelFly = () => { fly = null; };
 bar.setRiver(RIVER.typical);
 bar.showRiver(false);
 new ResizeObserver(() => { barRect = null; }).observe(bar.el);
-el('div', '', `<div>by <a href="https://p.migdal.pl/" target="_blank" rel="noopener">Piotr Migdał</a> & <a href="https://quesma.com/blog/invisible-cities-one-shot/" target="_blank" rel="noopener">Opus 5.5</a>, <a href="https://github.com/stared/warsaw-vibe-voxel" target="_blank" rel="noopener">source code</a></div>
-  <div>based on GUGiK 2025 and <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></div>`).id = 'credits';
+el('div', '', `<div>${locationConfig.id === 'ghent' ? 'Ghent edition by <a href="https://github.com/hansf" target="_blank" rel="noopener">Hans Fraiponts</a> · original viewer by ' : 'by '}<a href="https://p.migdal.pl/" target="_blank" rel="noopener">Piotr Migdał</a> & <a href="https://quesma.com/blog/invisible-cities-one-shot/" target="_blank" rel="noopener">Opus 5.5</a>, <a href="https://github.com/${locationConfig.id === 'ghent' ? 'hansf/voxelgent' : 'stared/warsaw-vibe-voxel'}" target="_blank" rel="noopener">source code</a></div>
+  <div>${locationConfig.id === 'ghent'
+    ? 'Ghent edition · <a href="https://data.stad.gent/explore/dataset/gent-in-3d/" target="_blank" rel="noopener">Stad Gent 3D</a> via <a href="https://github.com/MateoVanDamme/fly-over-gent" target="_blank" rel="noopener">Fly Over Ghent</a> · <a href="https://data.stad.gent/explore/dataset/locaties-bomen-gent/" target="_blank" rel="noopener">Groendienst Gent trees</a><br>Contains government information obtained under the free reuse model license Flanders v1.0.'
+    : 'based on GUGiK 2025'} · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></div>`).id = 'credits';
 if (qs.get('ui') === '0') document.body.classList.add('noui');
 addEventListener('resize', onResize);
 addEventListener('keydown', (e) => {
   if (e.key === '/' && !(e.metaKey || e.ctrlKey || e.altKey) && !(e.target as Element).closest?.('input')) { bar.search.input.focus(); e.preventDefault(); }
 });
 tamePinch(renderer.domElement);
-boot();
+boot().catch((error) => {
+  console.error('Map loading failed', error);
+  $('#loading').classList.remove('hidden');
+  $('#loading-text').textContent = `Could not load the ${locationConfig.name} map. Please reload and try again.`;
+});
 
 // phones get the real area over clay (zones.ts); ?engine=full insists on the whole city
 function pickEngine(): Engine {
@@ -258,13 +267,13 @@ function keepInside() {
 
 async function boot() {
   let meta: Meta;
-  [meta, climate] = await Promise.all([fetchJson<Meta>('data/meta.json'), fetchJson<Climate>('data/climate.json')]);
+  [meta, climate] = await Promise.all([fetchJson<Meta>('data/meta.json'), locationConfig.measuredEffects ? fetchJson<Climate>('data/climate.json') : Promise.resolve(null)]);
   views = meta.views;
   places = meta.labels;
   uniforms = makeUniforms(meta, engine);
-  loadFoliage(meta, uniforms).then((city) => bar.setDays({ 'leaves out': city.leaf, 'trees in colour': city.colour, 'leaves down': city.fall, ...DAYS }))
+  if (locationConfig.measuredEffects) loadFoliage(meta, uniforms).then((city) => bar.setDays({ 'leaves out': city.leaf, 'trees in colour': city.colour, 'leaves down': city.fall, ...DAYS }))
     .catch((e) => console.warn('foliage', e));
-  loadWindows(meta, uniforms).then((set) => { setWindows = set; }).catch((e) => console.warn('windows', e));
+  if (locationConfig.measuredEffects) loadWindows(meta, uniforms).then((set) => { setWindows = set; }).catch((e) => console.warn('windows', e));
   streamer = new TileStreamer(meta, makeVoxelMaterial(uniforms), scene);
   world = nav.world = streamer.world;
   nav.streamer = streamer;
@@ -278,7 +287,7 @@ async function boot() {
   daylight.theta = (meta.theta_deg || 0) * Math.PI / 180;
   const md = qs.get('date')?.split('-').map(Number);
   setDay(md ? dayOfYear(new Date(new Date().getFullYear(), md[0] - 1, md[1])) : TODAY);
-  setWeather((qs.get('weather') ?? '') in WEATHERS ? qs.get('weather')! : 'typical', true);
+  setWeather((qs.get('weather') ?? '') in WEATHERS ? qs.get('weather')! : locationConfig.measuredEffects ? 'typical' : 'clear', true);
   setHour(qs.get('hour') ? +qs.get('hour')! : timesOf(daylight.day)['golden hour']);
   if (engine === 'zones') {
     await (await import('./zones')).installZones({ streamer, uniforms: uniforms as typeof uniforms & ZoneUniforms, meta, focus, qs, composer: post.composer, n8: post.n8, camera });
@@ -289,12 +298,15 @@ async function boot() {
   labels = new Labels(meta.labels, onLabel);
   if (city) labels.gate = city.gate;
   hud = new Hud(renderer.domElement, nav.mode);
+  if (locationConfig.id === 'ghent') transit = new TransitLayer(scene, world, renderer.domElement);
   bar.search.setItems(searchItems(meta));
   fetchJson<{ places: Place[] }>('data/places.json').then(({ places }) => bar.search.setItems([...searchItems(meta),
     ...places.map(([name, kind, x, y, size, alt]) => ({ name, alt, kind, go: () => goPlace(x, y, size, { name, kind }) }))]));
   fountains = new Fountains(scene, meta.jets ?? []);
-  flood = new Flood(scene, uniforms, meta);
-  flood.load().then(() => { bar.river.input.disabled = false; flood!.setGauge(RIVER.typical); }).catch((e) => console.warn('flood', e));
+  if (locationConfig.measuredEffects) {
+    flood = new Flood(scene, uniforms, meta);
+    flood.load().then(() => { bar.river.input.disabled = false; flood!.setGauge(RIVER.typical); }).catch((e) => console.warn('flood', e));
+  }
   fetchJson<TrafficData>('data/traffic.json').then((td) => {
     life = nav.life = new StreetLife(scene, td);
     life.world = world;
@@ -326,6 +338,7 @@ renderer.setAnimationLoop((now) => {
   fountains?.update(t, daylight.night);
   precip.update(t, camera.position, daylight.weather, daylight.night);
   if (city?.complete) document.body.classList.remove('loading');
+  transit?.update(camera, !city || city.complete);
   if (life) {
     life.group.visible = !city || city.complete;
     if (life.group.visible) { life.day = daylight.day; life.update(dt, daylight.hour, daylight.night, focus()); }

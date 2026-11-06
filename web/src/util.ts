@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { dataUrl } from './location';
 
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 export const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, x));
@@ -20,12 +21,15 @@ export async function gunzip(data: ArrayBuffer | ReadableStream<Uint8Array<Array
 }
 
 export async function fetchGzip(url: string): Promise<ArrayBuffer> {
-  const res = await fetch(url);
+  const res = await fetch(dataUrl(url));
   if (!res.ok || !res.body) throw new Error(`${res.status} ${url}`);
   return gunzip(res.body);
 }
 
-export const fetchJson = <T>(url: string): Promise<T> => fetch(url).then((r) => r.json() as Promise<T>);
+export const fetchJson = <T>(url: string): Promise<T> => fetch(dataUrl(url)).then((r) => {
+  if (!r.ok) throw new Error(`${r.status} ${url}`);
+  return r.json() as Promise<T>;
+});
 
 export function dataTexture(data: Uint8Array | Uint16Array, w: number, h: number, format: THREE.PixelFormat,
   type: THREE.TextureDataType = THREE.UnsignedByteType) {

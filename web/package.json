@@ -6,6 +6,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "start": "node --env-file-if-exists=.env.local server/index.mjs",
+    "test:transit": "node --experimental-strip-types --test server/*.test.mjs",
     "shot": "node tools/shot.mjs",
     "check": "tsc --noEmit"
   },
