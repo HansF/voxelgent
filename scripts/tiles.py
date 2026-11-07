@@ -109,16 +109,30 @@ def thin_voxels(vol, skip_ids, keep_ids, note, most=9, band=96):
     return z.astype(np.int64), r.astype(np.int64), c.astype(np.int64), v.astype(np.uint16)
 
 
-def export(vol, g, out, note, keep_ids=(), skip_ids=(), face_ids=(), fol_ids=(), grass_ids=(), bare_id=0):
-    """vol (H, D, W) level-1 voxels, g (D, W) ground level -> node files; returns the manifest for meta.json."""
+def export(vol, g, out, note, keep_ids=(), skip_ids=(), face_ids=(), fol_ids=(), grass_ids=(), bare_id=0,
+           origin=(0, 0), owned=None):
+    """vol (H, D, W) level-1 voxels, g (D, W) ground level -> node files; returns the manifest for meta.json.
+
+    A big map is exported chunk by chunk: `vol` is then one chunk plus a halo, `origin` = (row, col) in metres of
+    vol[:, 0, 0] in the whole map (a multiple of 8), `g` is the whole map's ground, and `owned` = (r0, r1, c0, c1)
+    metres: only the nodes inside are written (their apron comes from the halo). Chunk edges must be multiples of
+    N * 8 m so a chunk holds whole nodes at every level."""
     D, W = g.shape
+    R0, C0 = origin
     info = dict(N=N, levels=[], bytes=0)
     tz, tr, tc, tv = thin_voxels(vol, skip_ids, keep_ids, note)
+    tr, tc = tr + R0, tc + C0  # whole-map metres
     for s in LEVELS:
         vs = vol if s == 1 else downsample(vol, s, np.array(sorted(face_ids), np.uint16))
         gs = g if s == 1 else g[::s, ::s]  # ground metres at the block's corner column (shader only)
-        Hs, Ds, Ws = vs.shape
+        _, Dl, Wl = vs.shape
+        lr, lc = R0 // s, C0 // s  # the volume's first cell in whole-map cells of this level
+        Ds, Ws = -(-D // s), -(-W // s)
         nx, ny = -(-Ws // N), -(-Ds // N)
+        ty0, ty1, tx0, tx1 = 0, ny, 0, nx
+        if owned is not None:
+            ty0, ty1 = owned[0] // (N * s), min(ny, -(-owned[1] // (N * s)))
+            tx0, tx1 = owned[2] // (N * s), min(nx, -(-owned[3] // (N * s)))
         (out / str(s)).mkdir(parents=True, exist_ok=True)
         split = s == 1 and len(fol_ids)
         if split:
@@ -127,18 +141,21 @@ def export(vol, g, out, note, keep_ids=(), skip_ids=(), face_ids=(), fol_ids=(),
             is_grass = np.zeros(65536, bool); is_grass[list(grass_ids)] = True
         tot, nruns, ndet, ftot = 0, 0, 0, 0
         if 1 < s < 8:  # thin voxels whose coarse block is empty (at 8 m cells a 1 m pole is under half a pixel)
-            lost = vs[tz // s, tr // s, tc // s] == 0
+            lost = vs[tz // s, (tr - R0) // s, (tc - C0) // s] == 0
             dz, dr, dc, dv = tz[lost], tr[lost], tc[lost], tv[lost]
             dnode = (dr // s // N) * nx + dc // s // N
-        for ty in range(ny):
-            for tx in range(nx):
+        for ty in range(ty0, ty1):
+            for tx in range(tx0, tx1):
                 r0, c0 = ty * N - 1, tx * N - 1
-                win = np.zeros((Hs, N + 2, N + 2), np.uint16)
+                win = np.zeros((vs.shape[0], N + 2, N + 2), np.uint16)
                 gw = np.zeros((N + 2, N + 2), np.uint8)
                 rr0, rr1, cc0, cc1 = max(r0, 0), min(r0 + N + 2, Ds), max(c0, 0), min(c0 + N + 2, Ws)
                 if rr0 < rr1 and cc0 < cc1:
-                    win[:, rr0 - r0:rr1 - r0, cc0 - c0:cc1 - c0] = vs[:, rr0:rr1, cc0:cc1]
                     gw[rr0 - r0:rr1 - r0, cc0 - c0:cc1 - c0] = np.clip(gs[rr0:rr1, cc0:cc1], 0, 255)
+                vr0, vr1, vc0, vc1 = max(rr0, lr), min(rr1, lr + Dl), max(cc0, lc), min(cc1, lc + Wl)
+                if vr0 < vr1 and vc0 < vc1:
+                    win[:, vr0 - r0:vr1 - r0, vc0 - c0:vc1 - c0] = vs[:, vr0 - lr:vr1 - lr, vc0 - lc:vc1 - lc]
+                Hs = win.shape[0]
                 top = int(np.nonzero(win.reshape(Hs, -1).any(1))[0].max()) + 1 if win.any() else 1
                 win = win[:top]
                 if split:

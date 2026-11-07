@@ -4,11 +4,16 @@ import struct
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
 
 import build_ghent
+import ghent_canopy
+import ghent_castle
+import ghent_grb
+import vlaanderen
 from delijn_routes import extract_routes
 from ghent_georeference import basis, make_georeference
 from build_delijn_schedule import seconds, shape_chunks, stop_distances
@@ -86,6 +91,60 @@ class GhentDataTests(unittest.TestCase):
             self.assertAlmostEqual(float(roof[0, 2]), 12.5)
             self.assertTrue(np.isnan(roof[3, 3]))
 
+    def test_kml_height_legend_colours(self):
+        self.assertEqual(ghent_grb.kml_colour("64ffffff"), (255, 255, 255))
+        self.assertEqual(ghent_grb.kml_colour("647aa0ff"), (255, 160, 122))
+        self.assertEqual(ghent_grb.kml_colour("642222b2"), (178, 34, 34))
+        with self.assertRaises(ValueError):
+            ghent_grb.kml_colour("abc")
+
+    def test_kml_stylemap_uses_the_normal_style(self):
+        document = """
+        <kml:Style id="style_tomato"><kml:PolyStyle><kml:color>644763ff</kml:color></kml:PolyStyle></kml:Style>
+        <kml:Style id="style_blue"><kml:PolyStyle><kml:color>64ff0000</kml:color></kml:PolyStyle></kml:Style>
+        <kml:StyleMap id="stylemap_tomato">
+          <Pair><key>normal</key><styleUrl>#style_tomato</styleUrl></Pair>
+          <Pair><key>highlight</key><styleUrl>#style_blue</styleUrl></Pair>
+        </kml:StyleMap>
+        """
+        styles = ghent_grb.parse_styles(document)
+        self.assertEqual(styles["stylemap_tomato"], (255, 99, 71))
+        self.assertEqual(styles["style_blue"], (0, 0, 255))
+
+    def test_canopy_keeps_a_green_crown_and_drops_a_car(self):
+        dsm = np.full((20, 20), 8.0)
+        dtm = np.full((20, 20), 6.0)
+        dsm[4:7, 4:7] = 15.0  # tree crown 9 m above the ground
+        dsm[14:17, 14:17] = 7.5  # parked car 1.5 m above the ground
+        rgb = np.full((20, 20, 3), 100, np.uint8)
+        rgb[..., 1] = 150
+        building = np.zeros((20, 20), bool)
+        mask = ghent_canopy.canopy_mask(dsm, dtm, building, rgb, np.array([[5, 5]]), min_area=1)
+        self.assertTrue(mask[5, 5])
+        self.assertFalse(mask[15, 15])
+        building[4:7, 4:7] = True
+        self.assertFalse(ghent_canopy.canopy_mask(dsm, dtm, building, rgb, None, min_area=1)[5, 5])
+
+    def test_palette_quantization_keeps_materials_and_cap(self):
+        rgb = np.random.default_rng(7).integers(0, 256, (30, 3), dtype=np.uint8)
+        material = np.full(30, 12, np.uint8)
+        base = [[0, 0, 0, 0], [158, 153, 140, 0]]
+        entries, ids = build_ghent.palette_ids(rgb, material, base, cap=48)
+        self.assertLessEqual(len(entries), 48)
+        self.assertEqual(entries[:2], base)
+        self.assertTrue(np.all(ids >= len(base)))
+        self.assertTrue(all(entries[int(i)][3] == 12 for i in ids))
+
+    def test_wcs_multipart_payload_and_rejection(self):
+        body = (b'--wcs\r\nContent-Type: application/gml+xml\r\n\r\n<gml/>\r\n'
+                b'--wcs\r\nContent-Type: image/tiff\r\n\r\nII*\x00payload\r\n--wcs--')
+        response = SimpleNamespace(headers={"content-type": 'multipart/related; boundary="wcs"'}, content=body)
+        self.assertEqual(vlaanderen.tiff_payload(response), b"II*\x00payload")
+        plain = SimpleNamespace(headers={"content-type": "image/tiff"}, content=b"II*\x00plain")
+        self.assertEqual(vlaanderen.tiff_payload(plain), b"II*\x00plain")
+        with self.assertRaises(ValueError):
+            vlaanderen.tiff_payload(SimpleNamespace(headers={"content-type": "text/xml"}, content=b"<html>"))
+
     def test_generated_tiles_match_manifest_and_grid(self):
         import gzip
         output = build_ghent.OUT
@@ -105,6 +164,20 @@ class GhentDataTests(unittest.TestCase):
         self.assertEqual(len(gzip.decompress((output / "zones.bin").read_bytes())), width * depth * 4)
         trees = json.loads((output / "trees.json").read_text())["trees"]
         self.assertTrue(all(0 <= t["x"] < width and 0 <= t["y"] < depth for t in trees))
+
+    def test_castle_lands_on_its_place_and_stands_above_the_ground(self):
+        if not ghent_castle.MODEL.exists():
+            self.skipTest("Gravensteen STL not present")
+        ground = np.full((2000, 2000), 7.2)
+        placed = ghent_castle.place(2000, 2000, 104000, 195000, ground)
+        zone, building, roof = placed
+        ys, xs = np.nonzero(building)
+        self.assertAlmostEqual(xs.mean(), 573, delta=15)  # easting 104573
+        self.assertAlmostEqual(ys.mean(), 694, delta=15)  # northing 194306
+        self.assertTrue(np.all(zone[building]))
+        self.assertTrue(np.all(roof[building] > 8.7))
+        self.assertGreater(np.nanmax(roof), 30)
+        self.assertIsNone(ghent_castle.place(100, 100, 0, 100, np.zeros((100, 100))))
 
 
 if __name__ == "__main__":

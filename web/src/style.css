@@ -123,3 +123,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; touch-action: none; /* p
 #bar, #labels, #hud { transition: opacity .6s; }
 .loading #bar, .loading #labels, .loading #hud { opacity: 0; pointer-events: none; }
 body:not(.loading) #bar { transition: opacity .12s 1.2s; }
+
+/* tree metadata overlay */
+.treedots { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+.treetoggle { position: fixed; left: 12px; bottom: 12px; z-index: 20; padding: 6px 12px; border-radius: 16px; border: 1px solid rgba(255,255,255,.35);
+  background: rgba(20,24,20,.7); color: #fff; font: 600 13px system-ui, sans-serif; cursor: pointer; }
+.treetoggle.active { background: #3d8b37; border-color: #9be28f; }
+.treecard { position: fixed; left: 0; top: 0; z-index: 21; width: 256px; padding: 10px 12px; border-radius: 8px; pointer-events: none;
+  background: rgba(15,18,15,.88); color: #fff; font: 12px/1.4 system-ui, sans-serif; box-shadow: 0 2px 12px rgba(0,0,0,.5); }
+.treecard.off { display: none; }
+.treecard b { display: block; font-size: 14px; font-style: italic; margin-bottom: 4px; }
+.treecard dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; }
+.treecard dt { color: #9fb39a; } .treecard dd { margin: 0; word-break: break-word; }

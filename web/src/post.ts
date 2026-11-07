@@ -26,6 +26,23 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, const in float depth,
   outputColor = vec4(sum / n, inputColor.a);
 }`;
 
+// A film grade after tone mapping: cool shadows, warm highlights and a soft S-curve, so the golden hour glows and
+// the shade reads as air rather than grey.
+const GRADE = `uniform float strength;
+void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+  vec3 x = inputColor.rgb;
+  float l = dot(x, vec3(0.2126, 0.7152, 0.0722));
+  x += mix(vec3(-0.010, 0.002, 0.018), vec3(0.026, 0.008, -0.022), smoothstep(0.12, 0.7, l)) * strength;
+  vec3 c = clamp(x, 0.0, 1.0);
+  x = mix(x, c * c * (3.0 - 2.0 * c), 0.16 * strength);
+  outputColor = vec4(x, inputColor.a);
+}`;
+
+class Grade extends Effect {
+  constructor() { super('Grade', GRADE, { uniforms: new Map([['strength', new THREE.Uniform(1)]]) }); }
+  set strength(v: number) { this.uniforms.get('strength')!.value = v; }
+}
+
 class DepthBlur extends Effect {
   constructor() {
     super('DepthBlur', DOF, { attributes: EffectAttribute.DEPTH | EffectAttribute.CONVOLUTION,
@@ -50,16 +67,18 @@ export function makePost(renderer: THREE.WebGLRenderer, scene: THREE.Scene, came
   const tiltPass = new EffectPass(camera, tilt);
   composer.addPass(new EffectPass(camera, bloom));
   composer.addPass(tiltPass);
+  const grade = new Grade();
   composer.addPass(new EffectPass(camera,
     tone,
+    grade,
     new HueSaturationEffect({ saturation: 0.12 }),
     new BrightnessContrastEffect({ brightness: 0, contrast: 0.06 }),
-    new VignetteEffect({ offset: 0.3, darkness: 0.45 }),
+    new VignetteEffect({ offset: 0.32, darkness: 0.5 }),
     new SMAAEffect()));
   // focused on what the camera looks at; the blur fades out towards the street, and eases over the whole map
   const setHeight = (h: number, enabled: boolean, focus = 500) => {
     tiltPass.enabled = enabled && h > 60;
     tilt.set(focus, clamp((h - 60) / 250, 0, 1) * (1 - 0.5 * clamp((h - 1200) / 1500, 0, 1)), renderer.domElement.height);
   };
-  return { composer, n8, bloom, tone, setHeight };
+  return { composer, n8, bloom, tone, grade, setHeight };
 }

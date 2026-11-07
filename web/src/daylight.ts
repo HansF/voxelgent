@@ -90,12 +90,14 @@ export class Daylight {
     sun.intensity *= e; hemi.intensity *= e; this.scene.environmentIntensity *= e;
   }
 
-  setFogFrom(dist: number) {
+  // height: the camera above the ground. Low views look along the city, so the haze closes in and softens the skyline
+  // (and the map's edge) into the sky; from high up the whole map stays clear.
+  setFogFrom(dist: number, height = 1000) {
     const fog = this.scene.fog as THREE.Fog | null;
     if (!fog) return;
-    const k = visibility(this.weather);
-    fog.near = Math.max(2500 * k * k, dist * (0.6 + 0.45 * k));
-    fog.far = fog.near + 4500 * k;
+    const k = visibility(this.weather), low = 1 - smooth(120, 900, height);
+    fog.near = Math.max(lerp(2500, 700, low) * k * k, dist * (0.6 + 0.45 * k));
+    fog.far = fog.near + lerp(4500, 2600, low) * k;
   }
 
   fitShadow(focus: THREE.Vector3, camera: THREE.Camera, viewDist: number, map: THREE.Box3) {

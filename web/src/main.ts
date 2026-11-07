@@ -12,6 +12,7 @@ import { Hud } from './hud';
 import { Labels } from './labels';
 import { locationConfig } from './location';
 import { TransitLayer } from './transit';
+import { TreeInfo } from './treeinfo';
 import { always, blank, gpu, remember, startStats, track, trackLater } from './stats';
 import { Nav, type Mode, type Ride } from './nav/nav';
 import { makePost } from './post';
@@ -58,6 +59,7 @@ const bar = new Bar({ days: DAYS, weathers: [...(locationConfig.measuredEffects 
 const precip = new Precip(scene);
 const map = new THREE.Box3();
 const tiltShift = qs.get('tilt') !== '0' && innerWidth >= 600 && (engine === 'city' || qs.get('tilt') === '1');
+let treeInfo: TreeInfo | null = null;
 let world: World | null = null, labels: Labels | null = null, hud: Hud | null = null;
 let life: StreetLife | null = null, flood: Flood | null = null, fountains: Fountains | null = null;
 let transit: TransitLayer | null = null;
@@ -76,7 +78,7 @@ bar.showRiver(false);
 new ResizeObserver(() => { barRect = null; }).observe(bar.el);
 el('div', '', `<div>${locationConfig.id === 'ghent' ? 'Ghent edition by <a href="https://github.com/hansf" target="_blank" rel="noopener">Hans Fraiponts</a> · original viewer by ' : 'by '}<a href="https://p.migdal.pl/" target="_blank" rel="noopener">Piotr Migdał</a> & <a href="https://quesma.com/blog/invisible-cities-one-shot/" target="_blank" rel="noopener">Opus 5.5</a>, <a href="https://github.com/${locationConfig.id === 'ghent' ? 'hansf/voxelgent' : 'stared/warsaw-vibe-voxel'}" target="_blank" rel="noopener">source code</a></div>
   <div>${locationConfig.id === 'ghent'
-    ? 'Ghent edition · <a href="https://data.stad.gent/explore/dataset/gent-in-3d/" target="_blank" rel="noopener">Stad Gent 3D</a> via <a href="https://github.com/MateoVanDamme/fly-over-gent" target="_blank" rel="noopener">Fly Over Ghent</a> · <a href="https://data.stad.gent/explore/dataset/locaties-bomen-gent/" target="_blank" rel="noopener">Groendienst Gent trees</a><br>Contains government information obtained under the free reuse model license Flanders v1.0.'
+    ? 'Ghent edition · <a href="https://data.stad.gent/explore/dataset/gent-in-3d/" target="_blank" rel="noopener">Stad Gent 3D</a> via <a href="https://github.com/MateoVanDamme/fly-over-gent" target="_blank" rel="noopener">Fly Over Ghent</a> · <a href="https://data.stad.gent/explore/dataset/locaties-bomen-gent/" target="_blank" rel="noopener">Groendienst Gent trees</a> · <a href="https://www.thingiverse.com/thing:4187726" target="_blank" rel="noopener">Gravensteen model by Haplo1988</a> (CC BY)<br>Contains government information obtained under the free reuse model license Flanders v1.0.'
     : 'based on GUGiK 2025'} · <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></div>`).id = 'credits';
 if (qs.get('ui') === '0') document.body.classList.add('noui');
 addEventListener('resize', onResize);
@@ -142,6 +144,16 @@ function onMode(m: Mode, ride: Ride | null) {
 }
 
 const focus = () => (nav.mode === 'orbit' ? controls.target : camera.position);
+
+// left alone for a while, the camera drifts slowly round what it looks at; any touch, key or wheel stops it
+let idleSince = performance.now();
+const wake = () => { idleSince = performance.now(); controls.autoRotate = false; };
+for (const ev of ['pointerdown', 'wheel', 'keydown', 'touchstart'] as const) addEventListener(ev, wake, { passive: true, capture: true });
+function drift(dt: number) {
+  const on = qs.get('drift') !== '0' && nav.mode === 'orbit' && !fly && performance.now() - idleSince > 20000 && !document.hidden;
+  controls.autoRotate = on;
+  controls.autoRotateSpeed = on ? Math.min(0.35, controls.autoRotateSpeed + dt * 0.1) : 0; // eases in
+}
 
 function setHour(h: number) {
   daylight.apply(h);
@@ -298,7 +310,7 @@ async function boot() {
   labels = new Labels(meta.labels, onLabel);
   if (city) labels.gate = city.gate;
   hud = new Hud(renderer.domElement, nav.mode);
-  if (locationConfig.id === 'ghent') transit = new TransitLayer(scene, world, renderer.domElement);
+  if (locationConfig.id === 'ghent') { transit = new TransitLayer(scene, world, renderer.domElement); treeInfo = new TreeInfo(); }
   bar.search.setItems(searchItems(meta));
   fetchJson<{ places: Place[] }>('data/places.json').then(({ places }) => bar.search.setItems([...searchItems(meta),
     ...places.map(([name, kind, x, y, size, alt]) => ({ name, alt, kind, go: () => goPlace(x, y, size, { name, kind }) }))]));
@@ -331,7 +343,8 @@ renderer.setAnimationLoop((now) => {
   const above = camera.position.y - (world ? world.groundAt(camera.position.x, camera.position.z) : 18) + 3;
   post.setHeight(above, tiltShift, camera.position.distanceTo(controls.target));
   const viewDist = camera.position.distanceTo(controls.target);
-  daylight.setFogFrom(viewDist);
+  daylight.setFogFrom(viewDist, above);
+  drift(dt);
   const t = (performance.now() - t0) / 1000;
   if (uniforms) { uniforms.uTime.value = t; pkinLight(daylight.day, t, uniforms.uPkinLight.value); }
   setWindows?.(daylight.hour, daylight.day);
@@ -355,6 +368,7 @@ renderer.setAnimationLoop((now) => {
   }
   barRect ??= bar.rect;
   labels?.update(camera, world, barRect, hud?.rects ?? []);
+  treeInfo?.update(camera, world);
 });
 
 window.__three = { camera, controls, nav, bar, scene, renderer, flyTo, setHour, setDay, setWeather, map, daylight, post };

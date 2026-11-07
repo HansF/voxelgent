@@ -5,7 +5,7 @@ import { dataTexture } from './util';
 
 // material ids, as in scripts/voxelize.py
 export const MAT = { SOLID: 0, WALL: 1, GLASS: 2, LEAF: 3, WATER: 4, LAMP: 5, METAL: 6, PKIN: 7, GRASS: 8, MARK: 9, SOIL: 10, CAR: 11,
-  ROOF: 12, CONCRETE: 13, CLOCK: 14, BRONZE: 15, SIGN: 16, JET: 17, SIGNBAND: 18, RIBBON: 19, CLASSIC: 20, WINDOW: 21, TENEMENT: 22 } as const;
+  ROOF: 12, CONCRETE: 13, CLOCK: 14, BRONZE: 15, SIGN: 16, JET: 17, SIGNBAND: 18, RIBBON: 19, CLASSIC: 20, WINDOW: 21, TENEMENT: 22, STONE: 23, BRICK: 24 } as const;
 
 type U<T> = { value: T };
 export interface VoxelUniforms {
@@ -184,6 +184,16 @@ const FRAG_PARS = `
   float hash13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
   float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
   vec3 gEmissive; float gRough; float gMetal;
+  // running-bond masonry on a wall face: x = mortar (0..1), y = this brick's own tone. p in metres, size = one unit
+  // (length, course height); the pattern fades out when a pixel spans a good part of a course, so it never shimmers.
+  vec2 masonry(vec2 p, vec2 size, float joint, float stagger) {
+    vec2 q = p / size;
+    q.x += mod(floor(q.y), 2.0) * stagger;
+    vec2 id = floor(q), f = fract(q);
+    float fade = 1.0 - smoothstep(0.3, 0.75, fwidth(p.y) / size.y);
+    float mortar = max(step(f.x, joint * size.y / size.x), step(f.y, joint));
+    return vec2(mortar * fade, mix(0.5, hash12(id + 13.1), fade));
+  }
   ${FOLIAGE}
   uniform sampler2D uWinMap; uniform float uWinMed[8]; uniform float uWinShape[72]; uniform float uWinFloors[8]; uniform vec3 uWinCol[8];
   // a building's share of lit windows now: its type's measured median times the building's own habit, a point on the
@@ -269,6 +279,35 @@ const SURFACE = `
         else gEmissive = windowLight(cell, room, floor(lvl / 4.0)) * uNight;
       }
     }
+  } else if (m == ${MAT.BRICK}) {
+    gRough = 0.92;
+    if (vert) {
+      bool ground = lvl < 4.0, inBay = mod(u, 3.0) < 1.0;
+      float fl = mod(lvl, 4.0);
+      bool win = inBay && (ground ? lvl > 0.5 && lvl < 3.0 : fl > 0.5 && fl < 2.5);
+      if (win) {
+        col = mix(base * 0.42, vec3(0.10, 0.13, 0.17), 0.55) + 0.025 * h;
+        gRough = 0.12; gMetal = 0.6;
+        vec2 room = vec2(floor(u / 6.0) + wpos * 17.31 + vN.x * 3.1, floor(lvl / 4.0) + vN.z * 5.7);
+        if (ground) { if (hash12(vec2(floor(u / 6.0), wpos * 3.7)) < 0.7) gEmissive = vec3(1.0, 0.8, 0.55) * 1.4 * uNight; }
+        else gEmissive = windowLight(cell, room, floor(lvl / 4.0)) * uNight;
+      } else {
+        vec2 b = masonry(vec2(abs(vN.x) > 0.5 ? vVox.z : vVox.x, vVox.y), vec2(0.5, 0.125), 0.09, 0.5);
+        col = base * (0.74 + 0.34 * b.y) * (0.94 + 0.12 * h);
+        col = mix(col, vec3(0.40, 0.36, 0.31) * (0.5 + 0.5 * dot(base, vec3(0.33))), b.x * 0.7);
+        // a faint stone sill band at every floor line
+        if (!ground && fl < 0.1) col = mix(col, vec3(0.45, 0.41, 0.36), 0.3);
+      }
+    }
+  } else if (m == ${MAT.STONE}) {
+    gRough = 0.95;
+    if (vert) {
+      vec2 b = masonry(vec2(abs(vN.x) > 0.5 ? vVox.z : vVox.x, vVox.y), vec2(1.0, 0.5), 0.06, 0.37);
+      col = base * (0.72 + 0.50 * b.y) * (0.93 + 0.14 * h);
+      col = mix(col, base * 0.35, b.x * 0.8);
+      // arrow slits high in the walls
+      if (lvl > 5.0 && mod(u, 7.0) < 1.0 && mod(lvl, 9.0) > 3.0 && mod(lvl, 9.0) < 6.0) { col = base * 0.12; gRough = 0.6; }
+    } else col *= 0.9 + 0.2 * h;
   } else if (m == ${MAT.CLASSIC}) {
     gRough = 0.8;
     if (vert && lvl < 7.5) col *= mod(lvl, 2.0) < 1.0 ? 0.9 : 1.0;

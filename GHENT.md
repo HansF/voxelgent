@@ -1,6 +1,6 @@
 # Ghent in voxels
 
-The default viewer now opens a 2 × 2 km map of central Ghent, built from actual municipal building and terrain geometry plus the city's tree inventory. It reuses the original voxel renderer, streamed tiles, orbit and walking controls, place search, sunlight and weather controls. Warsaw is available at `?city=warsaw`.
+The default viewer now opens a 2 × 2 km map of central Ghent, built from actual municipal building and terrain geometry, the official DHMV II height model, the 3D GRB building footprints, a summer orthophoto and the city's tree inventory. It reuses the original voxel renderer, streamed tiles, orbit and walking controls, place search, sunlight and weather controls. Warsaw is available at `?city=warsaw`.
 
 ## Preview
 
@@ -18,8 +18,12 @@ Navigation uses AZERTY: **Z/S** move forward/back, **Q/D** turn left/right, **A/
 
 ## Sources
 
-- [Stad Gent — Gent in 3D](https://data.stad.gent/explore/dataset/gent-in-3d/): four building and four terrain tiles, named 2013, in Belgian Lambert 72 (EPSG:31370). Bounds: easting 104000–106000, northing 193000–195000. Converted STL files come from [Mateo Van Damme's Fly Over Ghent](https://github.com/MateoVanDamme/fly-over-gent), hosted at `https://storage.googleapis.com/fly-over-ghent/stl/`. This project uses the data; it does not copy the other viewer's implementation.
-- [Groendienst Gent — Locaties bomen Gent](https://data.stad.gent/explore/dataset/locaties-bomen-gent/): downloaded 2026-11-06, 68,240 inventory records. The map contains 3,345 trees; 18 trees inside the historical building footprint are omitted. Coordinates, species, source height classes and provenance are retained in `web/public/ghent/trees.json`.
+- [Stad Gent — Gent in 3D](https://data.stad.gent/explore/dataset/gent-in-3d/): four building and four terrain tiles, named 2013, in Belgian Lambert 72 (EPSG:31370). Bounds: easting 104000–106000, northing 193000–195000. Converted STL files come from [Mateo Van Damme's Fly Over Ghent](https://github.com/MateoVanDamme/fly-over-gent), hosted at `https://storage.googleapis.com/fly-over-ghent/stl/`. This project uses the data; it does not copy the other viewer's implementation. The files are newer than the 2013 filename suggests: the model contains De Krook (built 2017), which is absent from both DHMV II and the 2016 GRB, so the STL stays the roof/footprint authority.
+- [Digitaal Vlaanderen — DHMV II DSM/DTM 1 m](https://geo.api.vlaanderen.be/dhmv/wcs) (WCS, EPSG:31370, 2013–2015): the DTM fills the 0.4 % of terrain the STL missed, and DSM − DTM drives the LiDAR tree canopy. 1 m GeoTIFFs are cached under `data/raw/ghent`.
+- [Digitaal Vlaanderen — 3D GRB LOD1 DHMV I KML](https://geo.api.vlaanderen.be/) (`GRBGebL1D1_KML_LB72.zip`): used only as a 2-D footprint mask (which X/Y is an official building). Its flat LOD1 heights and legend colours are ignored.
+- [Gravensteen model by Haplo1988](https://www.thingiverse.com/thing:4187726) (Thingiverse, CC BY 4.0-style attribution): a 600k-triangle STL of the castle, placed by `scripts/ghent_castle.py` over the city's rough block. It was aligned to the DHMV II surface model by footprint overlap (rotation −1°, IoU 0.97) and lifted onto the local ground; walls are grey stone, roofs take the orthophoto colour. The STL lives in `data/raw/gravensteen/files/` (not committed).
+- [Digitaal Vlaanderen — Summer orthophoto mosaic 2021](https://geo.api.vlaanderen.be/oi-omz/wcs) (OMZ RGB, 1 m): ground, roof and facade colours. The mosaic is unusually desaturated; parks are re-tinted toward summer green while keeping its texture.
+- [Groendienst Gent — Locaties bomen Gent](https://data.stad.gent/explore/dataset/locaties-bomen-gent/): downloaded 2026-11-06, 68,240 inventory records. The map contains 3,345 trees; 18 trees inside the historical building footprint are omitted. Coordinates, species, source height classes and provenance are retained in `web/public/ghent/trees.json`. Where the 2013–15 DSM has a real crown, that crown is drawn; otherwise the inventory's height class supplies a schematic crown.
 - [OpenStreetMap](https://www.openstreetmap.org/copyright): roads, water, vegetation areas, named places and building footprints for illustrative facade variation. The export timestamp is recorded in `meta.json`.
 
 City data uses the [Modellicentie Gratis Hergebruik Vlaanderen](https://www.vlaanderen.be/digitaal-vlaanderen/onze-oplossingen/open-data/voorwaarden-voor-het-hergebruik-van-overheidsinformatie/modellicentie-gratis-hergebruik). Contains government information obtained under the free reuse model license Flanders v1.0. © OpenStreetMap contributors, [ODbL](https://opendatacommons.org/licenses/odbl/). Original viewer code remains under the repository's MIT license.
@@ -31,13 +35,26 @@ The existing Python project includes the required geospatial dependencies. Downl
 ```sh
 python3 scripts/fetch_ghent.py
 python3 scripts/ghent_trees.py
+python3 scripts/vlaanderen.py       # DHMV II DSM/DTM + 2021 summer ortho (cached)
+python3 scripts/ghent_grb.py        # 3D GRB LOD1 KML footprints (cached)
 uv run python scripts/build_ghent.py
 uv run python -m unittest discover -s scripts -p 'test_ghent.py' -v
 ```
 
+The WCS downloads and the GRB footprint raster are cached under ignored `data/raw/ghent` and `data/ghent`; `scripts/vlaanderen.py` and `scripts/ghent_grb.py` can be re-run to refresh them. The KML tile set itself must be placed at `data/raw/GRBGebL1D1_KML_LB72.zip` (1 GB).
+
 `ghent_trees.py --refresh` updates the tree inventory and its metadata. It also supports `--bbox WEST SOUTH EAST NORTH` in WGS84 and `--output PATH`. The importer uses JSON from the same API as the supplied CSV export so field keys remain stable across display languages.
 
-The builder rasterizes triangle elevations at 1 m cell centres, fills buildings below their roofs and exports the existing 1/2/4/8 m tile format. Terrain covers 99.6% of the region; missing edge samples use the nearest valid terrain elevation. It writes a build report and separate terrain, building-region, foliage, search and camera data. A cached rebuild needs about a minute and roughly 2 GB of RAM.
+The builder rasterizes triangle elevations at 1 m cell centres, fills buildings below their roofs and exports the existing 1/2/4/8 m tile format. Terrain uses the STL where it exists (99.6 % of the region) and the official DTM in the gaps. DSM − DTM crowns replace schematic tree spheres wherever LiDAR has a crown; the remaining inventory trees keep the height-class sphere. Buildings are the GRB footprints with DHMV II roof heights (the STL only supplies buildings newer than the LiDAR); roofs, walls and ground take orthophoto colours. It writes a build report and separate terrain, building-region, foliage, search and camera data. A cached rebuild needs about a minute and roughly 2 GB of RAM.
+
+`GHENT_AREA=ring` builds the whole R4 ring (8 × 8 km) instead of the 2 km historic centre; both write to `web/public/ghent`. A copy of a centre build in `web/public/ghent-centre` is opened with `?area=centre`.
+
+How the look is made:
+
+* **Houses.** Each GRB footprint is its own house (not each connected block), so a terraced street has a different facade per house. Pitched or town-house-sized buildings get masonry (brick, stone or plaster with bay windows); large pitched buildings and anything over 28 m (belfry, church towers) are grey ashlar; only big or tall flat-roofed buildings get the plain modern wall.
+* **Roofs.** LiDAR roof heights get a 3 × 3 median that keeps pitches and spires but drops the speckle. Each house's roof is one tone (its mean, pulled toward slate, red tile, dark tile, bitumen or zinc) mixed with some of the photo. Within one house, a roof step stays roof-coloured all the way down to the lower roof, so lumpy roofs don't open strips of facade.
+* **Trees.** DSM crowns are domes, thick in the middle and thin at the rim, with trunks only under crown centres; single-cell canopy slivers are dropped.
+* **Viewer.** It opens on a low golden-hour shot of the three towers from the west (`aerial` is the old top-down view). Low views get closer haze. A film grade (cool shadows, warm highlights) runs after tone mapping, and the camera drifts slowly after 20 s idle (`?drift=0` turns that off).
 
 For browser verification, install Chromium with `pnpm exec playwright-core install chromium`, start the dev server and run `node tools/ghent-smoke.mjs` from `web`. The test checks loading, map asset requests, time, weather, place search and camera movement, and saves `/tmp/ghent-overview.png`.
 
@@ -89,8 +106,9 @@ References: [De Lijn developer portal](https://portal.delijn.be/apis), [GTFS Rea
 
 ## Limits of this edition
 
-- Geometry dates from 2013 and does not represent subsequent construction. The newer tree inventory can disagree with that geometry.
-- Roof shapes and terrain elevations come from the real model. Vertical column filling approximates tunnels, arches and overhangs; thin details smaller than a voxel can disappear.
-- STL has no colours. Facades, roofs and ground use illustrative colours and OSM surface classifications; these are not sampled from aerial photographs.
-- Most trees have no recorded height. Bounded height classes use their midpoint; open classes and missing heights get explicit rendering estimates. Crowns are schematic. Diameter and trunk circumference are preserved without conversion because their units are not documented in the API metadata. The publisher says the inventory is incomplete and some circumferences are street/species averages.
+- Building geometry comes from the current STL, which is newer than its 2013 filename: it contains post-2017 buildings such as De Krook that are missing from both DHMV II and the 2016 GRB. Where the sources disagree, the STL wins. Buildings added after the STL are absent.
+- The 3D GRB KML is a flat-roofed 2016 block model, so it is used only as a footprint mask; roof heights come from DHMV II.
+- Ground and post-2016 roofs use the 2021 summer orthophoto. That mosaic is unusually low-saturation; parks are re-tinted while keeping its texture. Facades are a darkened ortho tone, not street-level imagery.
+- Terrain uses the STL where it exists (99.6 % of the map) and the DHMV II DTM in the gaps. Roof shapes and terrain elevations come from the real model. Vertical column filling approximates tunnels, arches and overhangs; thin details smaller than a voxel can disappear.
+- DHMV II is the 2013–2015 LiDAR. A crown that was cut after 2015 is still drawn, and trees planted later only have a schematic crown. Of the 3,345 inventory trees in the map, 2,315 have a measured LiDAR crown and 1,012 use the height-class crown; 18 fall inside a building footprint and are omitted. Diameter and trunk circumference are preserved without conversion because their units are not documented in the API metadata. The publisher says the inventory is incomplete and some circumferences are street/species averages.
 - Weather is manually selected. Warsaw's measured climate, seasonal phenology, window statistics and Vistula flood scenarios are disabled for Ghent. General street traffic is not yet generated; De Lijn transit uses timetable estimates by default and reported GPS positions when available.

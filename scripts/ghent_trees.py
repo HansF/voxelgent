@@ -13,6 +13,8 @@ import re
 from pathlib import Path
 from urllib.request import Request, urlopen
 
+import ghent_area
+
 ROOT = Path(__file__).resolve().parents[1]
 API = "https://data.stad.gent/api/explore/v2.1/catalog/datasets/locaties-bomen-gent"
 SOURCE = "https://data.stad.gent/explore/dataset/locaties-bomen-gent/"
@@ -81,7 +83,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--refresh", action="store_true")
     parser.add_argument("--bbox", nargs=4, type=float, metavar=("WEST", "SOUTH", "EAST", "NORTH"))
-    parser.add_argument("--output", type=Path, default=ROOT / "data/ghent/trees.json")
+    parser.add_argument("--output", type=Path, default=ghent_area.TREES)
     args = parser.parse_args()
     if args.bbox and not (-180 <= args.bbox[0] < args.bbox[2] <= 180 and -90 <= args.bbox[1] < args.bbox[3] <= 90):
         parser.error("bbox must have ordered WGS84 bounds")
