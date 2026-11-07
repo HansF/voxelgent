@@ -5,3 +5,7 @@ web/node_modules/
 web/dist/
 web/.env
 web/.env.local
+
+# raw downloads kept beside the repo (the Gravensteen model is unpacked into data/raw)
+/Gravensteen - *.zip
+/gent-in-3d.csv
